@@ -1133,6 +1133,37 @@ def render_anim(anim_func, duration, outvid):
 
 按字数比例分配各子句在文案条上的显示时间。需要分析TTS音频中子句的自然停顿点。
 
+#### 进阶优化：edge-tts 词级精确对齐
+
+如果后续切换到 edge-tts 引擎，可利用其 `WordBoundary` 事件获取每个词在音频中的精确时间戳，按标点符号聚合得到子句断句点，替代按字数比例估算：
+
+```python
+import edge_tts, asyncio
+
+async def get_word_timestamps(text, output_path):
+    """获取TTS每个词的时间戳（微秒精度）"""
+    communicate = edge_tts.Communicate(text, "zh-CN-YunxiNeural")
+    word_boundaries = []
+    with open(output_path, "wb") as f:
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                f.write(chunk["data"])
+            elif chunk["type"] == "WordBoundary":
+                word_boundaries.append({
+                    "text": chunk["text"],
+                    "offset_sec": chunk["offset"] / 1e7,      # 微秒→秒
+                    "duration_sec": chunk["duration"] / 1e7,
+                })
+    return word_boundaries
+
+# 示例："台积电全线涨价5%到10%，排队等产能排到明年。"
+# 返回每个词的时间戳，按标点（逗号/句号）聚合
+# 子句1显示时间: 0s ~ 3.8s（到逗号位置）
+# 子句2显示时间: 3.8s ~ 6.0s（到句号位置）
+```
+
+**注意**：此优化依赖 edge-tts 引擎，当前宝哥仓库使用 Windows SAPI 不支持此特性。如需启用，需将 TTS 引擎从 SAPI 切换到 edge-tts。
+
 ---
 
 ## Phase 1：TTS语音合成
