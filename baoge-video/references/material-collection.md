@@ -1,5 +1,8 @@
 # 素材类型优先级与采集流程
 
+> 📌 **详细平台采集方案**（抖音JS API法、B站格式ID+drawbox去水印、YouTube搜索结果提取、抽帧筛选脚本）请见 `references/platform-collection-v2.md`。
+> 本文档为简版流程概览，v2文档包含完整代码和实操细节。
+
 ## 素材类型优先级
 
 1. **平台实拍素材**（B站/YouTube/抖音） — 先找抖音→B站→YouTube，搜索→预筛选→下载→截帧验收
