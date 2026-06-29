@@ -39,7 +39,8 @@ compatibility: ffmpeg, yt-dlp, Pillow, matplotlib, Playwright, Windows SAPI TTS,
 | `references/tts-rules.md` | TTS时长估算公式、长句分幕规则 |
 | `references/keyword-rules.md` | 搜索关键词规则（所有平台） |
 | `references/keyword-strategy-diagram.md` | 关键词编辑策略逻辑架构图（Mermaid） |
-| `references/material-collection.md` | 素材类型优先级、占比方案、平台采集流程 |
+| `references/material-collection.md` | 素材类型优先级、占比方案、平台采集流程（简版） |
+| `references/platform-collection-v2.md` | 平台采集详细方案v2（抖音JS API法、B站格式ID+drawbox去水印、YouTube搜索提取、抽帧筛选） |
 | `references/ai-generation.md` | AI生成素材、FFmpeg运镜 |
 | `references/data-viz.md` | 数据可视化动画规则 |
 | `references/post-production.md` | Phase 1-7 制作流程（TTS、贴片、合成、验证、复盘） |
