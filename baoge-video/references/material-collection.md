@@ -78,10 +78,7 @@ ffmpeg -i raw_clip.mp4 -ss 0 -t 5 -vf "crop=...,scale=1080:768" -an final_clip.m
 
 ### 平台优先级
 
-1. **抖音** — 素材丰富、画面动感强，优先搜索
-2. **B站** — 纪录片/科普类素材多，需处理cookies
-3. **YouTube** — 英文搜索覆盖广，需代理+cookies（登录态，下载受限时必须）
-4. **素材网站**（Pexels / Pixabay / Mixkit） — 平台搜不到时的补充
+**按关键词地域动态调整**，详见 `references/keyword-rules.md` 第六节
 
 ### 抖音素材采集流程
 
