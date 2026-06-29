@@ -513,10 +513,69 @@ yt-dlp --cookies bilibili_cookies.txt -o "raw_bili_%(id)s.mp4" "https://www.bili
    - `--download-sections "*起-止"` 格式：`*MM:SS-MM:SS`，只下载指定时间段，大幅节省时间
 6. 截取10-30秒片段 → 裁剪 → 缩放1080×768
 
-### Pexels素材网站采集流程
+### 素材网站采集流程（Pexels / Pixabay / Mixkit）
 
-1. 用Playwright打开 `https://www.pexels.com/search/videos/{关键词}/`
-2. 或使用Pexels API（需API Key）：
+素材网站的视频**无水印可直接使用**，作为平台实拍素材的重要补充。以下覆盖三个主流免费素材网站，按推荐优先级排列。
+
+#### 三平台对比
+
+| 维度 | Pexels | Pixabay | Mixkit |
+|------|--------|---------|--------|
+| 数据提取方式 | `__NEXT_DATA__` JSON（Next.js SSR） | JSON-LD `VideoObject`（schema.org） | 正则匹配 CDN URL |
+| 视频文件路径 | `props.pageProps.initialData.data.attributes.video.video_files` | URL 模式 `{base}_{tiny|small|medium|large}.mp4` | URL 模式 `assets.mixkit.co/videos/{id}/{id}-{res}.mp4` |
+| 缩略图路径 | `video.thumbnail.medium` | `VideoObject.thumbnailUrl` | 无，需 ffmpeg 截帧 |
+| 标签来源 | 结构化 `tags` 数组 | `description` 字段逗号分隔 | 无，仅分类页标题 |
+| 搜索方式 | 关键词搜索 | 关键词搜索 | 分类浏览（无搜索功能） |
+| Cloudflare 防护 | 有，需 `curl_cffi impersonate` | 轻量，仍建议 impersonate | 无，普通 requests 即可 |
+| 视频库规模 | 较大，物理场景素材丰富 | 中等，CG/数字艺术素材偏多 | 小，technology 分类约 24 个 |
+| 科技素材质量 | 中高，物理场景实拍多 | 中，CG/抽象偏多 | 高，电路板/数据中心实拍 |
+
+#### 反爬绕过：curl_cffi
+
+Pexels 和 Pixabay 均使用 Cloudflare 防护，普通 `requests` 会被拦截返回 403。解决方案：**curl_cffi 的 `impersonate='chrome'`** 模拟真实浏览器 TLS 指纹。
+
+```python
+from curl_cffi import requests as cffi_req
+
+# 关键：impersonate='chrome' 模拟 Chrome TLS 指纹
+r = cffi_req.get(url, headers=headers, impersonate="chrome", timeout=30)
+# 绕过 Cloudflare 的 JA3/JA4 指纹检测
+```
+
+安装：`pip install curl_cffi`
+
+---
+
+##### Pexels 采集
+
+Pexels 使用 Next.js SSR，页面内嵌 `__NEXT_DATA__` JSON。数据路径较深但结构稳定。
+
+```python
+# 1. 从 HTML 中提取 __NEXT_DATA__
+import re, json
+from curl_cffi import requests as cffi_req
+
+url = f"https://www.pexels.com/search/videos/{keyword}/"
+r = cffi_req.get(url, impersonate="chrome", timeout=30)
+m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.DOTALL)
+data = json.loads(m.group(1))
+
+# 2. 视频列表路径
+videos = data["props"]["pageProps"]["initialData"]["data"]
+# 每个视频对象含: id, attributes { video { video_files, thumbnail }, tags }
+
+# 3. 视频文件列表（选最优分辨率）
+video_files = video["attributes"]["video"]["video_files"]
+# [{ "quality":"hd","file_type":"video/mp4","width":1920,"height":1080,"link":"https://.." }]
+
+# 4. 缩略图
+thumb = video["attributes"]["video"]["thumbnail"]["medium"]
+
+# 5. 标签（结构化数组，用于筛选）
+tags = [t["name"] for t in video["attributes"]["tags"]]
+```
+
+也可使用 Pexels 官方 API（需 API Key）：
 ```python
 import requests
 url = "https://api.pexels.com/videos/search"
@@ -524,7 +583,217 @@ headers = {"Authorization": "PEXELS_API_KEY"}
 params = {"query": "semiconductor factory", "per_page": 10}
 response = requests.get(url, headers=headers, params=params)
 ```
-3. 下载无水印视频，直接截取所需片段裁剪到1080×768
+
+---
+
+##### Pixabay 采集
+
+Pixabay **不用** `__NEXT_DATA__`，而是用 JSON-LD（schema.org `VideoObject`）嵌入视频元数据。
+
+```python
+# 1. 搜索页提取 JSON-LD
+url = f"https://pixabay.com/videos/search/{keyword}/"
+r = cffi_req.get(url, impersonate="chrome", timeout=30)
+ld_scripts = re.findall(r'<script type="application/ld\+json">(.*?)</script>', r.text, re.DOTALL)
+
+# 2. 筛选 VideoObject 类型
+for s in ld_scripts:
+    obj = json.loads(s)
+    if obj["@type"] == "VideoObject":
+        content_url = obj["contentUrl"]       # ..._tiny.mp4（低分辨率预览）
+        large_url = content_url.replace("_tiny.mp4", "_large.mp4")  # 升级到高清
+        thumbnail_url = obj["thumbnailUrl"]
+        duration = obj["duration"]             # "T0M12S" ISO 8601
+        desc = obj["description"]              # 标签来源（逗号分隔）
+        license_path = obj["acquireLicensePage"]
+
+# 3. 分辨率需访问详情页获取
+# 搜索页不含 width/height，需额外请求详情页
+detail_url = f"https://pixabay.com{license_path}"
+r2 = cffi_req.get(detail_url, impersonate="chrome", timeout=30)
+# 详情页 JSON-LD 含 width / height 字段
+```
+
+**Pixabay 注意事项：**
+- 搜索页 JSON-LD 的 `contentUrl` 只含 `_tiny.mp4`（低分辨率预览），需手动替换为 `_large.mp4`
+- 搜索页**不含** `width/height`，需额外请求详情页获取分辨率
+- 标签来源是 `description` 字段的逗号分隔文本，不是结构化数组
+
+---
+
+##### Mixkit 采集
+
+Mixkit 与前两个平台完全不同：**无关键词搜索、无结构化元数据、无 Cloudflare 防护**。仅提供分类浏览页，所有视频 CDN 链接直接暴露在 HTML 中，用正则即可提取。
+
+```python
+# 1. Mixkit 无搜索功能，只能按分类页浏览
+# Technology 分类: https://mixkit.co/free-stock-video/technology/
+url = "https://mixkit.co/free-stock-video/technology/"
+r = cffi_req.get(url, impersonate="chrome", timeout=15)
+# 无需 impersonate，普通 requests 也能访问
+
+# 2. 正则提取所有视频 CDN URL
+# URL 模式: https://assets.mixkit.co/videos/{id}/{id}-{res}.mp4
+raw = re.findall(
+    r'https://assets\.mixkit\.co/videos/(\d+)/\1-(\d+)\.mp4',
+    r.text
+)
+
+# 3. 每个视频 ID 可能出现多个分辨率，取最高
+videos = {}
+for vid, res in raw:
+    res_int = int(res)
+    if vid not in videos or res_int > videos[vid]:
+        videos[vid] = res_int
+
+# 4. 构建下载 URL
+for vid, res in sorted(videos.items(), key=lambda x: -x[1]):
+    dl_url = f"https://assets.mixkit.co/videos/{vid}/{vid}-{res}.mp4"
+    # 直接下载，无需 Referer 或特殊 headers
+```
+
+**Mixkit 特点：**
+- **无搜索功能** — 只能按分类页浏览（technology / business / nature 等），无法按关键词搜索
+- **无元数据** — 不提供标题、描述、标签、时长、缩略图 URL 等任何元数据
+- **无 Cloudflare** — CDN 直接暴露，普通 HTTP 请求即可下载
+- **URL 规律稳定** — `assets.mixkit.co/videos/{id}/{id}-{res}.mp4`，正则一步提取
+- **多分辨率** — 同一视频 ID 对应多个分辨率文件（360/720/1080），取最高即可
+- **缩略图需自建** — 无缩略图 URL，需用 `ffmpeg -frames:v 1` 从视频截帧
+- **分页有限** — Technology 分类仅 1 页约 24 个视频
+
+Mixkit 缩略图生成（ffmpeg 截帧）：
+```python
+import subprocess, os
+
+def extract_thumbnail(video_path, thumb_path):
+    """从视频第一帧生成缩略图"""
+    cmd = ["ffmpeg", "-y", "-i", video_path,
+           "-frames:v", "1", "-q:v", "2",
+           thumb_path, "-loglevel", "error"]
+    subprocess.run(cmd, capture_output=True)
+    return os.path.exists(thumb_path)
+```
+
+---
+
+##### 标签排除规则（素材网站搜索阶段快速筛选）
+
+素材网站（Pexels/Pixabay）每个视频都带标签数组，可在搜索阶段快速过滤明显不合格的视频，避免浪费下载时间。
+
+```python
+EXCLUDE_TAGS = {
+    # CG动画类 — 画面假、不真实
+    "3d videos", "3d animation", "animation", "animated",
+    "abstract art", "abstract", "digital art",
+    "motion graphics", "conceptual",
+
+    # 人物类 — 有人脸
+    "person", "people", "woman", "man",
+    "interview", "portrait", "talking", "face", "selfie",
+
+    # 景别类 — 排除特写
+    "close up", "close up shot",
+
+    # 棚拍/展示类
+    "presentation", "slideshow", "text", "logo",
+    "gameplay", "screenshot",
+}
+
+def tag_filter(tags):
+    """精确匹配排除，不做子串匹配（避免 "ai" in "animation" 误排除）"""
+    excluded = []
+    for t in tags:
+        t_lower = t.lower().strip()
+        if t_lower in EXCLUDE_TAGS:      # 精确匹配
+            excluded.append(t)
+            continue
+        words = t_lower.replace("-", " ").split()
+        for ex in EXCLUDE_TAGS:
+            if ex in words:              # 分词后精确词匹配
+                excluded.append(t)
+                break
+    return excluded  # 返回被排除的标签列表，空列表表示通过
+```
+
+---
+
+##### 缩略图 AI 分析（下载前判断画面质量）
+
+对通过标签筛选的视频，下载缩略图进行 AI 分析，判断景别、构图、素材类型和内容相关性，进一步过滤不合格素材。
+
+分析 prompt 模板：
+```
+分析这张视频缩略图，判定以下4个维度：
+1. 景别：特写 / 近景 / 中景 / 远景
+2. 构图：主体位置是否居中或三分线附近（正常 vs 偏一侧）
+3. 素材类型：实拍影视 / CG线条动画 / 棚拍产品展示 / 科普拆解动画 / PPT风格
+4. 内容相关性：与「{话题}」是否有真实因果关联
+```
+
+筛选标准：
+- **景别**：排除纯特写（只看到局部细节，缺乏场景感）
+- **构图**：主体居中或三分法，排除主体偏一侧/画面失衡
+- **素材类型**：优先实拍，排除纯CG/棚拍/PPT风格
+- **内容相关性**：与话题有真实因果关联，排除牵强对应
+
+---
+
+##### 语义相关性筛选（处理关键词多义性）
+
+素材网站搜索时，关键词可能存在多义性（如搜索 `chip` 可能返回薯片/扑克筹码）。通过标签白名单/黑名单辅助判断。
+
+```python
+def relevance_filter(tags, topic):
+    """
+    判断视频标签是否与话题语义相关
+    返回: "relevant" / "irrelevant" / "uncertain"
+    """
+    tag_text = " ".join(t.lower() for t in tags)
+    
+    # 命中黑名单 → 不相关
+    for word in IRRELEVANT_WORDS.get(topic, []):
+        if word in tag_text:
+            return "irrelevant"
+    
+    # 命中白名单 → 相关
+    for word in RELEVANT_WORDS.get(topic, []):
+        if word in tag_text:
+            return "relevant"
+    
+    return "uncertain"  # 交给缩略图分析判断
+```
+
+---
+
+##### 下载验证
+
+通过筛选的视频用 curl_cffi stream 模式下载，限制大小 50MB，下载后用 ffprobe 验证实际规格。
+
+```python
+def download_video(url, filepath, max_size_mb=50):
+    """Stream 下载视频，限制大小"""
+    r = cffi_req.get(url, impersonate="chrome", timeout=60, stream=True)
+    if r.status_code != 200:
+        return False
+    total = 0
+    with open(filepath, "wb") as f:
+        for chunk in r.iter_content(chunk_size=65536):
+            if chunk:
+                f.write(chunk)
+                total += len(chunk)
+                if total > max_size_mb * 1024 * 1024:
+                    f.close()
+                    os.remove(filepath)
+                    return False
+    return True
+```
+
+ffprobe 验证：
+```bash
+ffprobe -v error -select_streams v:0 -show_entries stream=width,height,duration,codec_name,r_frame_rate -of json video.mp4
+```
+
+合格标准：分辨率 ≥ 1280×720，时长 3-30s，编码 H.264/H.265，帧率 ≥ 24fps。
 
 ---
 
@@ -904,8 +1173,10 @@ def render_anim(anim_func, duration, outvid):
 ### 2a. 平台实拍素材（抖音→B站→YouTube，优先抖音）
 按"平台素材采集详细流程"执行：搜索关键词 → Playwright打开平台 → 模拟人工浏览预筛选 → 播放确认 → yt-dlp下载（带cookies）→ 截取10-30秒流畅片段 → 裁剪清洗 → 缩放1080×768。
 
-### 2b. 素材网站（Pexels/Coverr/Pixabay）
-用Playwright或API搜索Pexels视频，下载无水印片段，截取所需片段裁剪到1080×768。
+### 2b. 素材网站（Pexels / Pixabay / Mixkit）
+按"素材网站采集流程"执行：搜索关键词 → curl_cffi 反爬绕过 → 标签排除 → 缩略图 AI 分析 → 下载 → ffprobe 验证 → 裁剪到1080×768。
+
+详见上文「素材网站采集流程（Pexels / Pixabay / Mixkit）」章节。
 
 ### 2c. AI生成视频（优先） / AI图片+运镜（备选）
 **优先**：尝试用WorkRally或其他AI视频工具生成动态视频。
