@@ -87,6 +87,7 @@ compatibility: ffmpeg, yt-dlp, Pillow, matplotlib, Playwright, Windows SAPI TTS,
 - **禁止太窄的词**：如"台积电2024Q3涨价公告截图"、"某某UP主第3期视频"——太窄搜不到
 - **关键词组合**：1个主题词 + 1-2个修饰词，如"半导体 工厂 航拍"、"光纤 生产 线"
 - **备选关键词**：每镜至少准备2组关键词，主关键词搜不到时切换备选
+- **⭐ 后缀"素材"备选**：当主关键词搜不到或结果不理想时，在关键词后加"素材"后缀作为备选词，如"半导体素材"、"芯片制造素材"、"光纤素材"。部分素材网站对带"素材"后缀的搜索词有更好的匹配结果。
 
 ### 0c. 确定标题
 
@@ -529,6 +530,12 @@ yt-dlp --cookies bilibili_cookies.txt -o "raw_bili_%(id)s.mp4" "https://www.bili
 | Cloudflare 防护 | 有，需 `curl_cffi impersonate` | 轻量，仍建议 impersonate | 无，普通 requests 即可 |
 | 视频库规模 | 较大，物理场景素材丰富 | 中等，CG/数字艺术素材偏多 | 小，technology 分类约 24 个 |
 | 科技素材质量 | 中高，物理场景实拍多 | 中，CG/抽象偏多 | 高，电路板/数据中心实拍 |
+
+#### 通用关键词策略
+
+素材网站搜索时，优先使用**实体场景词**（如 `robot working factory`、`data center server room`），避免抽象概念词（如 `machine learning`、`AI technology`），因为抽象词容易返回 CG 动画。
+
+**备选方案：后缀"素材"** — 当主关键词搜不到或结果不理想时，在关键词后加"素材"后缀，如"半导体素材"、"芯片制造素材"、"光纤素材"。部分素材网站对带"素材"后缀的搜索词有更好的匹配结果。
 
 #### 反爬绕过：curl_cffi
 
