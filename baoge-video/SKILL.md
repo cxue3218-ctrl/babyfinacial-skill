@@ -33,10 +33,12 @@ compatibility: ffmpeg, yt-dlp, Pillow, matplotlib, Playwright, Windows SAPI TTS,
 
 | 文件 | 内容 |
 |------|------|
+| `README.md` | 项目说明（工作流程、画面结构、技术栈、快速开始） |
 | `references/production-rules.md` | 导演人设、画面结构、标题样式、素材红线规则 |
 | `references/storyboard-rules.md` | Phase 0：分镜方案（拆句、素材方案、标题、分镜表） |
 | `references/tts-rules.md` | TTS时长估算公式、长句分幕规则 |
 | `references/keyword-rules.md` | 搜索关键词规则（所有平台） |
+| `references/keyword-strategy-diagram.md` | 关键词编辑策略逻辑架构图（Mermaid） |
 | `references/material-collection.md` | 素材类型优先级、占比方案、平台采集流程 |
 | `references/ai-generation.md` | AI生成素材、FFmpeg运镜 |
 | `references/data-viz.md` | 数据可视化动画规则 |
